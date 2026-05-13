@@ -16,7 +16,7 @@
     'use strict';
 
     // ============ ??? ============
-    const DEV_KEY = 'jiayounvlishangjing41545-5450@$72205HFAGHSKdfhs5b5s0';
+    const DEV_KEY = 'Yang@2004';
     // ===============================
 
     const _defineProperty = Object.defineProperty;
@@ -47,7 +47,7 @@
             || host === '' || host.startsWith('192.168.') || host.startsWith('10.')
             || host.endsWith('.local') || host.startsWith('dev.')
             || location.protocol === 'file:') {
-            _consoleWarn('[anti-steal] local/dev host — protection skipped');
+            _consoleWarn('[anti-steal] local/dev host â€” protection skipped');
             return;
         }
     } catch (e) {}
@@ -64,12 +64,12 @@
             // ?? URL ??,???????
             url.searchParams.delete('__dev__');
             try { history.replaceState({}, '', url.toString()); } catch (e) {}
-            _consoleWarn('[anti-steal] dev key accepted — protection disabled for this browser');
+            _consoleWarn('[anti-steal] dev key accepted â€” protection disabled for this browser');
             return;
         }
         // ???????? localStorage
         if (localStorage.getItem('__asd_dev__') === DEV_KEY) {
-            _consoleWarn('[anti-steal] dev mode active — protection skipped');
+            _consoleWarn('[anti-steal] dev mode active â€” protection skipped');
             return;
         }
     } catch (e) {}
@@ -288,7 +288,7 @@
             } else {
                 if (devtoolsOpenAtStart) {
                     devtoolsOpenAtStart = false;
-                    warn('devtools closed — guard re-armed');
+                    warn('devtools closed â€” guard re-armed');
                 }
                 detectStreak = 0;
             }
