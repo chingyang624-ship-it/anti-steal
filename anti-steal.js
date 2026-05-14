@@ -16,7 +16,7 @@
     'use strict';
 
     // ============ ??? ============
-    const DEV_KEY = 'Yang@2004';
+    const DEV_KEY = 'Yang_2004_dev';
     // ===============================
 
     const _defineProperty = Object.defineProperty;
