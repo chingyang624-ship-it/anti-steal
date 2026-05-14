@@ -1,16 +1,15 @@
 /*!
- * Anti-Steal Protection v7 (customer-safe)
+ * Anti-Steal Protection v8 (password-gated, customer-safe)
  *
- * Changes vs v6:
- * - Removed false-positive-prone checks: raf-drift, debugger statement, mass-clear
- * - DevTools detection: window-gap + console trap only, zoom-guarded,
- *   requires 4 consecutive hits before acting
- * - Touch devices skip DevTools detection entirely
- * - If DevTools is already open at load, page is NOT killed (grace mode)
- * Result: real visitors are essentially never hit; casual copying is still
- * deterred; DevTools opened after load -> white screen.
+ * Behaviour:
+ * - Normal visitors (no DevTools): browse normally, never affected
+ * - ANYONE who opens DevTools, before OR after page load: white screen
+ * - The ONLY way to inspect is the password (set via #__dev__= , then
+ *   stored in localStorage). There is no free "grace mode" bypass anymore.
+ * - Touch devices skip DevTools detection (mobile metrics are unreliable)
+ * - No raf-drift / debugger / mass-clear (those caused false positives)
  *
- * Dev backdoor for the site owner: see notes at the very bottom of this file.
+ * HOW THE OWNER UNLOCKS: see notes at the very bottom of this file.
  */
 (function () {
     'use strict';
@@ -33,17 +32,33 @@
         }
     } catch (e) {}
 
-    // --- dev backdoor: localStorage switch (permanent for your own browser) ---
+    // --- password unlock: localStorage is the permanent switch ---
     try {
         if (localStorage.getItem('__asd_dev__') === DEV_KEY) {
             _warn('[anti-steal] dev mode - skipped');
             return;
         }
-        // also accept ?__dev__=KEY in case the platform did NOT strip it
-        var sp = new URL(location.href).searchParams;
-        if (sp.get('__dev__') === DEV_KEY) {
+    } catch (e) {}
+
+    // --- password unlock: accept the key from URL query OR hash, then store it ---
+    // The #hash is tried because some site builders strip the ?query before
+    // this script runs, but usually leave the #hash alone.
+    try {
+        var fromQuery = null, fromHash = null;
+        try { fromQuery = new URL(location.href).searchParams.get('__dev__'); } catch (e) {}
+        try {
+            var m = (location.hash || '').match(/__dev__=([^&]+)/);
+            if (m) fromHash = decodeURIComponent(m[1]);
+        } catch (e) {}
+        if (fromQuery === DEV_KEY || fromHash === DEV_KEY) {
             try { localStorage.setItem('__asd_dev__', DEV_KEY); } catch (e) {}
-            _warn('[anti-steal] dev key accepted');
+            try {
+                var u = new URL(location.href);
+                u.searchParams.delete('__dev__');
+                u.hash = (u.hash || '').replace(/[#&]?__dev__=[^&]*/, '');
+                history.replaceState({}, '', u.toString());
+            } catch (e) {}
+            _warn('[anti-steal] dev key accepted - unlocked for this browser');
             return;
         }
     } catch (e) {}
@@ -104,16 +119,13 @@
     }, { capture: true });
 
     // ============ Layer 2: DevTools detection -> white screen ============
-    // Touch devices: skip entirely. Mobile viewport metrics are unreliable and
-    // would cause false positives for ordinary phone users.
+    // Touch devices: skip entirely (mobile viewport metrics are unreliable).
     if (IS_TOUCH) return;
 
     var initDPR = window.devicePixelRatio || 1;
     var initScale = (window.visualViewport && window.visualViewport.scale) || 1;
 
-    // Window-gap method: when DevTools is docked, outer vs inner size differ a lot.
-    // Zoom-guarded: if the user changed zoom, we report "not DevTools" so that
-    // zooming in (elderly users, high-DPI screens, etc.) never triggers a kill.
+    // Window-gap method, zoom-guarded so that zooming never triggers a kill.
     function devtoolsByGap() {
         try {
             var dpr = window.devicePixelRatio || 1;
@@ -121,38 +133,25 @@
             if (Math.abs(dpr - initDPR) > 0.02 || Math.abs(scale - initScale) > 0.02) return false;
             var wGap = (window.outerWidth || 0) - (window.innerWidth || 0);
             var hGap = (window.outerHeight || 0) - (window.innerHeight || 0);
-            // 200px threshold: normal browser chrome / scrollbars are far smaller
             return wGap > 200 || hGap > 200;
         } catch (e) { return false; }
     }
 
-    // Console getter trap: the getter only runs if DevTools console actually
-    // renders the logged object. Safe - has no effect for normal visitors.
+    // Console getter trap: only fires when DevTools console actually renders it.
     var consoleHit = false;
     var trap = {};
     try {
         Object.defineProperty(trap, 'id', { get: function () { consoleHit = true; return ''; } });
     } catch (e) {}
 
-    // If DevTools is ALREADY open when the page loads, do not kill. This both
-    // (a) lets the site owner inspect, and (b) avoids killing a real visitor
-    // who happened to have DevTools open for some unrelated reason.
-    var graceMode = devtoolsByGap();
-
-    // Require several CONSECUTIVE hits before acting. This removes any
-    // one-off transient false positive.
+    // NO grace mode: DevTools open at ANY time -> kill. Still requires 2
+    // consecutive hits so a single transient glitch cannot cause a false kill.
     var streak = 0;
-    var NEED = 4;
+    var NEED = 2;
 
     _setInterval(function () {
         if (KILLED) return;
         if (document.hidden) { streak = 0; return; }   // ignore background tabs
-
-        if (graceMode) {
-            // stay in grace mode until DevTools is closed, then re-arm
-            if (!devtoolsByGap()) { graceMode = false; streak = 0; }
-            return;
-        }
 
         var hit = false;
         try {
@@ -168,30 +167,32 @@
         } else {
             streak = 0;
         }
-    }, 1000);
+    }, 700);
 
 })();
 
 /*
  * ====================================================================
- * HOW YOU (the site owner) INSPECT YOUR OWN SITE
+ * HOW YOU (the site owner) UNLOCK & INSPECT YOUR OWN SITE
  * ====================================================================
- * The dev backdoor is a localStorage switch. Set it once, per browser,
- * and the whole script is skipped on that browser forever.
+ * There is NO free bypass. The password (the localStorage key) is the
+ * only way in. Set it once per browser:
  *
- * Steps:
- *   1. Open a NEW blank tab.
- *   2. Press F12 to open DevTools (blank tab has no protection).
- *      Keep DevTools DOCKED (attached to the side/bottom, not a separate window).
- *   3. Keep DevTools open, then go to https://truedinkum.com in that tab.
- *      Because DevTools was already open at load, the script is in "grace
- *      mode" and will NOT white-screen the page.
- *   4. In the DevTools Console, run:
+ * METHOD A - try this first (hash key):
+ *   Visit:  https://truedinkum.com/#__dev__=Yang_2004_dev
+ *   If your site builder leaves the #hash alone, the script reads it,
+ *   stores the password in localStorage, and unlocks THIS browser
+ *   permanently. After that you can open DevTools freely.
+ *
+ * METHOD B - if Method A does not work (builder strips the hash too):
+ *   1. In your site builder, temporarily REMOVE the anti-steal loader
+ *      snippet. Save / publish.
+ *   2. Visit your site, press F12, open the Console tab, run:
  *        localStorage.setItem('__asd_dev__', 'Yang_2004_dev')
- *   5. Done. From now on this browser skips the script entirely - you can
- *      inspect freely without opening DevTools first.
+ *   3. Put the anti-steal loader snippet back. Save / publish.
+ *   4. This browser is now unlocked permanently.
  *
- * To turn dev mode OFF again, run in the Console:
- *        localStorage.removeItem('__asd_dev__')
+ * To LOCK this browser again (turn dev mode off):
+ *   Open the Console and run:  localStorage.removeItem('__asd_dev__')
  * ====================================================================
  */
